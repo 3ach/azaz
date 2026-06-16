@@ -208,6 +208,7 @@ body {
 
 .swatch {
   display: inline-block;
+  flex: none;
   width: 0.85rem;
   height: 0.85rem;
   border-radius: 50%;
@@ -308,6 +309,8 @@ body {
 .track .pip.near {
   background: var(--near);
   border: 1px solid var(--near-ink);
+  /* The nearest pip hugs the selected one; keep it on top so it stays visible. */
+  z-index: 3;
 }
 .track .pip.far {
   background: var(--far);
