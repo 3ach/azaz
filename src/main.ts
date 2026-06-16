@@ -25,8 +25,6 @@ interface Data {
   norms: Float32Array; // [count] L2 norms
   colMin: Float32Array;
   colMax: Float32Array;
-  colArgMin: Int32Array; // token sitting at each column's minimum end
-  colArgMax: Int32Array; // token sitting at each column's maximum end
   colMean: Float32Array; // per-dimension mean (for distinctiveness ordering)
   colStd: Float32Array;
 }
@@ -109,31 +107,6 @@ async function loadData(): Promise<void> {
     norms[t] = Math.sqrt(s) + 1e-9;
   }
 
-  // Per-dimension extremes: the tokens at the min and max end of each axis.
-  // These don't depend on the selected word, so compute them once. (Working in
-  // quantized space is fine — the per-column quantization is monotonic.)
-  const colArgMin = new Int32Array(dim);
-  const colArgMax = new Int32Array(dim);
-  for (let d = 0; d < dim; d++) {
-    let lo = Infinity;
-    let hi = -Infinity;
-    let loI = 0;
-    let hiI = 0;
-    for (let t = 0; t < count; t++) {
-      const v = q[t * dim + d];
-      if (v < lo) {
-        lo = v;
-        loI = t;
-      }
-      if (v > hi) {
-        hi = v;
-        hiI = t;
-      }
-    }
-    colArgMin[d] = loI;
-    colArgMax[d] = hiI;
-  }
-
   // Per-dimension mean & std for distinctiveness ordering.
   const colMean = new Float32Array(dim);
   const colStd = new Float32Array(dim);
@@ -163,8 +136,6 @@ async function loadData(): Promise<void> {
     norms,
     colMin,
     colMax,
-    colArgMin,
-    colArgMax,
     colMean,
     colStd,
   };
@@ -242,8 +213,16 @@ function selectByPos(pos: number): void {
   renderDimensions();
 }
 
-// Bonus context: the closest words by full-vector cosine similarity.
-function renderOverall(index: number): void {
+// How many nearest neighbours form the "all other parameters held close"
+// neighbourhood whose spread we read along each dimension.
+const NEIGHBOURHOOD = 60;
+
+// Indices of every other token ordered by full-vector cosine similarity to the
+// selected one, most similar first. Cached so the "nearest overall" panel and
+// the per-dimension extremes (and re-sorts) share a single pass.
+let nbCache: { index: number; order: Int32Array } | null = null;
+function neighbourOrder(index: number): Int32Array {
+  if (nbCache && nbCache.index === index) return nbCache.order;
   const { dim, count, emb, norms } = data!;
   const b = index * dim;
   const scored: { i: number; s: number }[] = [];
@@ -255,18 +234,25 @@ function renderOverall(index: number): void {
     scored.push({ i: t, s: dot / (norms[index] * norms[t]) });
   }
   scored.sort((a, c) => c.s - a.s);
-  const words = scored
-    .slice(0, 5)
-    .map((x) => `<b>${cleanWord(data!.tokens[x.i].str)}</b>`)
+  const order = Int32Array.from(scored, (x) => x.i);
+  nbCache = { index, order };
+  return order;
+}
+
+// Bonus context: the closest words by full-vector cosine similarity.
+function renderOverall(index: number): void {
+  const order = neighbourOrder(index);
+  const words = Array.from(order.slice(0, 5))
+    .map((i) => `<b>${cleanWord(data!.tokens[i].str)}</b>`)
     .join(', ');
   $overall.innerHTML = `nearest overall: ${words}`;
 }
 
 function renderDimensions(): void {
   if (!data || selectedIndex === null) return;
-  const { dim, emb, colMin, colMax, colArgMin, colArgMax, colMean, colStd } =
-    data;
+  const { dim, count, emb, colMean, colStd } = data;
   const t = selectedIndex;
+  const tb = t * dim;
 
   // Order dimensions either by index or by how distinctive this word is along
   // each axis (|z-score| of its value within the column).
@@ -279,42 +265,66 @@ function renderDimensions(): void {
     });
   }
 
+  // The neighbourhood: the words closest to the target across all dimensions —
+  // "all other parameters as close as possible". For each axis we then read off
+  // which of them sits lowest and highest, i.e. the words you reach by sliding
+  // just this one coordinate, and where the target falls in that spread.
+  const neighbours = neighbourOrder(t).subarray(
+    0,
+    Math.min(NEIGHBOURHOOD, count - 1),
+  );
+
   const parts: string[] = [];
   for (const d of order) {
-    // Push this one coordinate to each extreme (holding the others fixed): the
-    // words sitting at the min and max ends of the axis. The selected word's
-    // bubble shows where it falls between them.
-    const minWord = cleanWord(data.tokens[colArgMin[d]].str);
-    const maxWord = cleanWord(data.tokens[colArgMax[d]].str);
+    const tv = emb[tb + d];
 
-    const span = colMax[d] - colMin[d] || 1;
-    const pos = (v: number) => {
-      const p = ((v - colMin[d]) / span) * 100;
-      return Math.max(0, Math.min(100, p));
-    };
-    const tv = emb[t * dim + d];
+    let loI = neighbours[0];
+    let hiI = neighbours[0];
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let n = 0; n < neighbours.length; n++) {
+      const w = neighbours[n];
+      const v = emb[w * dim + d];
+      if (v < lo) {
+        lo = v;
+        loI = w;
+      }
+      if (v > hi) {
+        hi = v;
+        hiI = w;
+      }
+    }
+
+    const leftV = lo;
+    const rightV = hi;
+    const leftWord = cleanWord(data.tokens[loI].str);
+    const rightWord = cleanWord(data.tokens[hiI].str);
+
+    // Place the selected word's bubble between the two neighbourhood extremes.
+    const span = rightV - leftV || 1;
+    const targetPos = Math.max(0, Math.min(100, ((tv - leftV) / span) * 100));
 
     parts.push(
       `<div class="row">
         <span class="dimno">${d}</span>
-        <span class="word left" title="lowest: ${minWord} · ${colMin[d].toFixed(
+        <span class="word left" title="${leftWord} · ${leftV.toFixed(
           3,
-        )}">${minWord}</span>
+        )}">${leftWord}</span>
         <span class="track">
           <span class="line"></span>
-          <span class="cap left" title="${minWord} · ${colMin[d].toFixed(
+          <span class="cap left" title="${leftWord} · ${leftV.toFixed(
             3,
           )}"></span>
-          <span class="cap right" title="${maxWord} · ${colMax[d].toFixed(
+          <span class="cap right" title="${rightWord} · ${rightV.toFixed(
             3,
           )}"></span>
-          <span class="pip target" style="left:${pos(tv)}%" title="${cleanWord(
+          <span class="pip target" style="left:${targetPos}%" title="${cleanWord(
             data.tokens[t].str,
           )} · ${tv.toFixed(3)}"></span>
         </span>
-        <span class="word right" title="highest: ${maxWord} · ${colMax[d].toFixed(
+        <span class="word right" title="${rightWord} · ${rightV.toFixed(
           3,
-        )}">${maxWord}</span>
+        )}">${rightWord}</span>
       </div>`,
     );
   }
