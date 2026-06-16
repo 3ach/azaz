@@ -189,13 +189,41 @@ body {
 .controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.8rem;
   padding: 0.7rem 0;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
   margin-bottom: 0.4rem;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  margin-left: 0.7rem;
+}
+.swatch:first-child {
+  margin-left: 0;
+}
+.swatch.target {
+  background: var(--target-ink);
+}
+.swatch.near {
+  background: var(--near-ink);
+}
+.swatch.far {
+  background: var(--far-ink);
 }
 
 .sort-control {
@@ -219,10 +247,10 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 3.2rem 1fr;
+  grid-template-columns: 3.2rem 7rem 1fr 7rem;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0;
+  padding: 0.32rem 0;
   border-bottom: 1px dotted var(--rule);
 }
 
@@ -234,9 +262,30 @@ body {
   text-align: right;
 }
 
+/* A flanking word sits in the column on the side of the line its value falls
+   on; its colour says whether it is the nearest or farthest in this dimension. */
+.row .word {
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .word.left {
+  text-align: right;
+}
+.row .word.right {
+  text-align: left;
+}
+.row .word.near {
+  color: var(--near-ink);
+}
+.row .word.far {
+  color: var(--far-ink);
+}
+
 .track {
   position: relative;
-  height: 3rem;
+  height: 1.5rem;
 }
 
 .track .line {
@@ -248,58 +297,25 @@ body {
   background: var(--rule);
 }
 
-/* Tick marks sit on the number line at the nearest / farthest positions. */
-.track .tick {
+.track .pip {
   position: absolute;
   top: 50%;
-  width: 2px;
-  height: 14px;
-  transform: translate(-50%, -50%);
-}
-.track .tick.near {
-  background: var(--near-ink);
-}
-.track .tick.far {
-  background: var(--far-ink);
-}
-
-/* Word labels hang off their tick: far above the line, near below it, each
-   reading away from the tick on whichever side keeps it inside the track. */
-.track .tlabel {
-  position: absolute;
-  font-size: 0.92rem;
-  line-height: 1;
-  white-space: nowrap;
-  max-width: 48%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.track .tlabel.far {
-  bottom: calc(50% + 9px);
-  color: var(--far-ink);
-}
-.track .tlabel.near {
-  top: calc(50% + 9px);
-  color: var(--near-ink);
-}
-.track .tlabel.left {
-  margin-left: 4px;
-  text-align: left;
-}
-.track .tlabel.right {
-  transform: translateX(-100%);
-  margin-left: -4px;
-  text-align: right;
-}
-
-/* The selected token stays a bubble, riding on top of the line. */
-.track .pip.target {
-  position: absolute;
-  top: 50%;
-  width: 13px;
-  height: 13px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
+}
+.track .pip.near {
+  background: var(--near);
+  border: 1px solid var(--near-ink);
+}
+.track .pip.far {
+  background: var(--far);
+  border: 1px solid var(--far-ink);
+}
+.track .pip.target {
+  width: 13px;
+  height: 13px;
   background: var(--target);
   border: 1.5px solid var(--target-ink);
   z-index: 2;
@@ -317,10 +333,10 @@ body {
     font-size: 16px;
   }
   .row {
-    grid-template-columns: 2.4rem 1fr;
+    grid-template-columns: 2.4rem 5rem 1fr 5rem;
     font-size: 0.85rem;
   }
-  .track .tlabel {
-    font-size: 0.82rem;
+  .row .word {
+    font-size: 0.8rem;
   }
 }

@@ -275,31 +275,44 @@ function renderDimensions(): void {
     const nv = emb[nearI * dim + d];
     const fv = emb[farI * dim + d];
 
-    const nearWord = cleanWord(data.tokens[nearI].str);
-    const farWord = cleanWord(data.tokens[farI].str);
-    const nearPos = pos(nv);
-    const farPos = pos(fv);
-    // A tick's label hangs off the side that keeps it inside the track: ticks
-    // in the left half read rightward, ticks in the right half read leftward.
-    const side = (p: number) => (p > 50 ? 'right' : 'left');
+    // The nearest and farthest each take the flanking column on the side of the
+    // line their value falls on (smaller value -> left). Colour still tells the
+    // two apart, so a word reads on the same side as its pip on the track.
+    const near = {
+      cls: 'near',
+      label: 'nearest',
+      v: nv,
+      word: cleanWord(data.tokens[nearI].str),
+    };
+    const far = {
+      cls: 'far',
+      label: 'farthest',
+      v: fv,
+      word: cleanWord(data.tokens[farI].str),
+    };
+    const [left, right] = nv <= fv ? [near, far] : [far, near];
+    const wordCell = (c: typeof near, side: 'left' | 'right') =>
+      `<span class="word ${side} ${c.cls}" title="${c.label}: ${c.word} · ${c.v.toFixed(
+        3,
+      )}">${c.word}</span>`;
 
     parts.push(
       `<div class="row">
         <span class="dimno">${d}</span>
+        ${wordCell(left, 'left')}
         <span class="track">
           <span class="line"></span>
-          <span class="tick far" style="left:${farPos}%"></span>
-          <span class="tlabel far ${side(farPos)}" style="left:${farPos}%" title="farthest · ${fv.toFixed(
-            3,
-          )}">${farWord}</span>
-          <span class="tick near" style="left:${nearPos}%"></span>
-          <span class="tlabel near ${side(nearPos)}" style="left:${nearPos}%" title="nearest · ${nv.toFixed(
-            3,
-          )}">${nearWord}</span>
+          <span class="pip far" style="left:${pos(fv)}%" title="farthest: ${
+            far.word
+          } · ${fv.toFixed(3)}"></span>
+          <span class="pip near" style="left:${pos(nv)}%" title="nearest: ${
+            near.word
+          } · ${nv.toFixed(3)}"></span>
           <span class="pip target" style="left:${pos(tv)}%" title="${cleanWord(
             data.tokens[t].str,
           )} · ${tv.toFixed(3)}"></span>
         </span>
+        ${wordCell(right, 'right')}
       </div>`,
     );
   }
