@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Embedding Explorer — GPT-2</title>
+    <meta
+      name="description"
+      content="An interactive reading of GPT-2's token embeddings: type a word and wander its 768 dimensions."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Spectral+SC:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main id="app">
+      <header class="masthead">
+        <p class="kicker">An interactive reading of</p>
+        <h1>The Embedding Explorer</h1>
+        <p class="dek">
+          Every word GPT-2 knows is a point in 768-dimensional space. Type one
+          below and wander its coordinates — discovering, dimension by
+          dimension, which other words sit nearest and which lie farthest away.
+        </p>
+
+        <div class="search">
+          <input
+            id="search"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="Type a word — try “king”, “ocean”, or “tokenization”"
+          />
+        </div>
+        <div id="tokens" class="tokens" aria-live="polite"></div>
+        <p id="hint" class="hint"></p>
+      </header>
+
+      <section id="selection" class="selection" hidden>
+        <div class="selection-head">
+          <div class="selected-word">
+            <span class="selected-label">Now exploring</span>
+            <span id="selected-token" class="selected-token"></span>
+          </div>
+          <div id="overall" class="overall"></div>
+        </div>
+
+        <div class="controls">
+          <div class="legend">
+            <span class="swatch target"></span>this word
+            <span class="swatch near"></span>nearest in dimension
+            <span class="swatch far"></span>farthest in dimension
+          </div>
+          <label class="sort-control">
+            order
+            <select id="sort">
+              <option value="distinct">most distinctive first</option>
+              <option value="index">dimension number</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="dims" class="dims"></div>
+      </section>
+
+      <footer class="colophon">
+        <p>
+          Embeddings are the real <code>wte</code> matrix of OpenAI's GPT-2
+          (124M), 768 dimensions over a 50,257-token vocabulary. This page
+          carries a curated set of the most common single-token English words.
+          Tokenization runs in your browser; nothing is sent anywhere.
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

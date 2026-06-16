@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.venv/
+build_assets/
+*.onnx
+.DS_Store
