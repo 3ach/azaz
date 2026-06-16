@@ -45,7 +45,6 @@
             placeholder="Type a word — try “king”, “ocean”, or “tokenization”"
           />
         </div>
-        <div id="tokens" class="tokens" aria-live="polite"></div>
         <p id="hint" class="hint"></p>
       </header>
 
@@ -53,7 +52,7 @@
         <div class="selection-head">
           <div class="selected-word">
             <span class="selected-label">Now exploring</span>
-            <span id="selected-token" class="selected-token"></span>
+            <span id="selected-token" class="selected-token" aria-live="polite"></span>
           </div>
           <div id="overall" class="overall"></div>
         </div>

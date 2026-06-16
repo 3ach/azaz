@@ -32,12 +32,14 @@ interface Data {
 const Q_MAX = 65535;
 let data: Data | null = null;
 let selectedIndex: number | null = null;
+// The tokens the current input breaks into, and which one we're exploring.
+let currentIds: number[] = [];
+let selectedPos = -1;
 
 // ----------------------------------------------------------------------------
 // DOM handles
 // ----------------------------------------------------------------------------
 const $search = document.getElementById('search') as HTMLInputElement;
-const $tokens = document.getElementById('tokens') as HTMLDivElement;
 const $hint = document.getElementById('hint') as HTMLParagraphElement;
 const $selection = document.getElementById('selection') as HTMLElement;
 const $selectedToken = document.getElementById('selected-token') as HTMLElement;
@@ -142,69 +144,73 @@ async function loadData(): Promise<void> {
 }
 
 // ----------------------------------------------------------------------------
-// Tokenization & chips
+// Tokenization
 // ----------------------------------------------------------------------------
-function renderTokens(): void {
+function handleInput(): void {
   const raw = $search.value.trim();
-  $tokens.innerHTML = '';
   $hint.textContent = '';
   if (!raw || !data) {
+    $selection.hidden = true;
+    selectedIndex = null;
     return;
   }
 
   // Treat the input as a word in running text (GPT-2's natural, space-prefixed
   // form). This is the token whose embedding the model actually uses most.
-  const ids = encode(' ' + raw);
-  const chips: HTMLButtonElement[] = [];
+  currentIds = encode(' ' + raw);
+  const firstKnown = currentIds.findIndex((id) => data!.idToIndex.has(id));
 
-  ids.forEach((id) => {
-    const str = decode([id]);
-    const idx = data!.idToIndex.get(id);
-    const chip = document.createElement('button');
-    chip.className = 'chip' + (idx === undefined ? ' disabled' : '');
-    chip.innerHTML = showToken(str);
-    chip.title =
-      idx === undefined
-        ? 'Not in this page’s vocabulary'
-        : 'Explore this token';
-    if (idx !== undefined) {
-      chip.addEventListener('click', () => select(idx, chip));
-    }
-    $tokens.appendChild(chip);
-    chips.push(chip);
-  });
-
-  const inVocab = ids.filter((id) => data!.idToIndex.has(id));
-
-  if (ids.length === 1 && inVocab.length === 1) {
-    // Single, known token: select it automatically.
-    select(data!.idToIndex.get(ids[0])!, chips[0]);
-  } else if (ids.length > 1) {
-    $hint.textContent =
-      'This word breaks into several tokens — click the piece you want to explore.';
-  } else if (inVocab.length === 0) {
+  if (firstKnown === -1) {
+    $selection.hidden = true;
+    selectedIndex = null;
     $hint.textContent =
       'That token isn’t in this page’s curated vocabulary. Try a more common word.';
+    return;
   }
-}
 
-function setActiveChip(active: HTMLElement | null): void {
-  $tokens.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
-  active?.classList.add('active');
+  if (currentIds.length > 1) {
+    $hint.textContent =
+      'This word breaks into several tokens — click a piece to explore it.';
+  }
+  // Default to the first in-vocabulary token; the strip lets you pick another.
+  selectByPos(firstKnown);
 }
 
 // ----------------------------------------------------------------------------
 // Selection & dimension rendering
 // ----------------------------------------------------------------------------
-function select(index: number, chip?: HTMLElement | null): void {
+// The "Now exploring" strip doubles as the token picker: every piece of the
+// input is shown, the explored one is highlighted in colour, the rest are
+// clickable, and out-of-vocabulary pieces are greyed out.
+function renderTokenStrip(): void {
   if (!data) return;
-  selectedIndex = index;
-  setActiveChip(chip ?? null);
-  $selectedToken.innerHTML = showToken(data.tokens[index].str);
+  $selectedToken.innerHTML = currentIds
+    .map((id, i) => {
+      const known = data!.idToIndex.has(id);
+      const cls =
+        'tok' +
+        (i === selectedPos ? ' active' : '') +
+        (known ? '' : ' disabled');
+      const title = known
+        ? 'Explore this token'
+        : 'Not in this page’s vocabulary';
+      return `<button class="${cls}" data-pos="${i}"${
+        known ? '' : ' disabled'
+      } title="${title}">${showToken(decode([id]))}</button>`;
+    })
+    .join('');
+}
+
+function selectByPos(pos: number): void {
+  if (!data) return;
+  const idx = data.idToIndex.get(currentIds[pos]);
+  if (idx === undefined) return;
+  selectedPos = pos;
+  selectedIndex = idx;
   $selection.hidden = false;
-  renderOverall(index);
+  renderTokenStrip();
+  renderOverall(idx);
   renderDimensions();
-  $selection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Bonus context: the closest words by full-vector cosine similarity.
@@ -325,7 +331,15 @@ function renderDimensions(): void {
 let debounce: number | undefined;
 $search.addEventListener('input', () => {
   window.clearTimeout(debounce);
-  debounce = window.setTimeout(renderTokens, 140);
+  debounce = window.setTimeout(handleInput, 140);
+});
+
+// Clicking a piece in the "Now exploring" strip switches which token we explore.
+$selectedToken.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.tok') as HTMLElement | null;
+  if (!btn || btn.classList.contains('disabled')) return;
+  const pos = Number(btn.dataset.pos);
+  if (!Number.isNaN(pos) && pos !== selectedPos) selectByPos(pos);
 });
 
 $sort.addEventListener('change', renderDimensions);
@@ -334,7 +348,7 @@ loadData()
   .then(() => {
     $search.disabled = false;
     $search.focus();
-    if ($search.value.trim()) renderTokens();
+    if ($search.value.trim()) handleInput();
   })
   .catch((err) => {
     console.error(err);
