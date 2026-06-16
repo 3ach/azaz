@@ -152,6 +152,7 @@ function handleInput(): void {
   if (!raw || !data) {
     $selection.hidden = true;
     selectedIndex = null;
+    $hint.textContent = 'pick a word, any word.';
     return;
   }
 
