@@ -52,19 +52,44 @@ body {
   padding-bottom: 2rem;
 }
 
+.masthead-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 4vw, 2.5rem);
+  flex-wrap: wrap;
+  margin-bottom: 1.6rem;
+}
+
+.titles {
+  text-align: left;
+}
+
 .azaz {
   display: block;
   width: clamp(120px, 28vw, 168px);
   height: auto;
-  margin: 0 auto 0.4rem;
+  flex: none;
 }
 
 .masthead h1 {
   font-weight: 500;
-  font-size: clamp(2.2rem, 6vw, 3.4rem);
-  line-height: 1.05;
-  margin: 0 0 1.4rem;
+  font-size: clamp(2.6rem, 8vw, 4rem);
+  line-height: 1;
+  margin: 0;
   letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0.5rem 0 0;
+  color: var(--ink-soft);
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+.subtitle .quote {
+  display: block;
+  font-style: italic;
+  color: var(--ink);
 }
 
 .search {
@@ -217,14 +242,18 @@ body {
 .swatch:first-child {
   margin-left: 0;
 }
+/* Two-tone, matching the timeline pips: pale fill with an inked border. */
 .swatch.target {
-  background: var(--target-ink);
+  background: var(--target);
+  border: 1.5px solid var(--target-ink);
 }
 .swatch.near {
-  background: var(--near-ink);
+  background: var(--near);
+  border: 1px solid var(--near-ink);
 }
 .swatch.far {
-  background: var(--far-ink);
+  background: var(--far);
+  border: 1px solid var(--far-ink);
 }
 
 .sort-control {
