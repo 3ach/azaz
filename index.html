@@ -18,13 +18,14 @@
   <body>
     <main id="app">
       <header class="masthead">
-        <p class="kicker">An interactive reading of</p>
+        <img
+          class="azaz"
+          src="/king-azaz.svg"
+          width="160"
+          height="200"
+          alt="King Azaz the Unabridged, seated on his throne"
+        />
         <h1>The Embedding Explorer</h1>
-        <p class="dek">
-          Every word GPT-2 knows is a point in 768-dimensional space. Type one
-          below and wander its coordinates — discovering, dimension by
-          dimension, which other words sit nearest and which lie farthest away.
-        </p>
 
         <div class="search">
           <input
@@ -50,11 +51,6 @@
         </div>
 
         <div class="controls">
-          <div class="legend">
-            <span class="swatch target"></span>this word
-            <span class="swatch near"></span>nearest in dimension
-            <span class="swatch far"></span>farthest in dimension
-          </div>
           <label class="sort-control">
             order
             <select id="sort">
@@ -66,15 +62,6 @@
 
         <div id="dims" class="dims"></div>
       </section>
-
-      <footer class="colophon">
-        <p>
-          Embeddings are the real <code>wte</code> matrix of OpenAI's GPT-2
-          (124M), 768 dimensions over a 50,257-token vocabulary. This page
-          carries a curated set of the most common single-token English words.
-          Tokenization runs in your browser; nothing is sent anywhere.
-        </p>
-      </footer>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

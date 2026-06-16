@@ -275,27 +275,31 @@ function renderDimensions(): void {
     const nv = emb[nearI * dim + d];
     const fv = emb[farI * dim + d];
 
+    const nearWord = cleanWord(data.tokens[nearI].str);
+    const farWord = cleanWord(data.tokens[farI].str);
+    const nearPos = pos(nv);
+    const farPos = pos(fv);
+    // A tick's label hangs off the side that keeps it inside the track: ticks
+    // in the left half read rightward, ticks in the right half read leftward.
+    const side = (p: number) => (p > 50 ? 'right' : 'left');
+
     parts.push(
       `<div class="row">
         <span class="dimno">${d}</span>
-        <span class="near-word" title="${cleanWord(
-          data.tokens[nearI].str,
-        )} · ${nv.toFixed(3)}">${cleanWord(data.tokens[nearI].str)}</span>
         <span class="track">
           <span class="line"></span>
-          <span class="pip far" style="left:${pos(fv)}%" title="farthest: ${cleanWord(
-            data.tokens[farI].str,
-          )} · ${fv.toFixed(3)}"></span>
-          <span class="pip near" style="left:${pos(nv)}%" title="nearest: ${cleanWord(
-            data.tokens[nearI].str,
-          )} · ${nv.toFixed(3)}"></span>
-          <span class="pip target" style="left:${pos(tv)}%" title="this word · ${tv.toFixed(
+          <span class="tick far" style="left:${farPos}%"></span>
+          <span class="tlabel far ${side(farPos)}" style="left:${farPos}%" title="farthest · ${fv.toFixed(
             3,
-          )}"></span>
+          )}">${farWord}</span>
+          <span class="tick near" style="left:${nearPos}%"></span>
+          <span class="tlabel near ${side(nearPos)}" style="left:${nearPos}%" title="nearest · ${nv.toFixed(
+            3,
+          )}">${nearWord}</span>
+          <span class="pip target" style="left:${pos(tv)}%" title="${cleanWord(
+            data.tokens[t].str,
+          )} · ${tv.toFixed(3)}"></span>
         </span>
-        <span class="far-word" title="${cleanWord(
-          data.tokens[farI].str,
-        )} · ${fv.toFixed(3)}">${cleanWord(data.tokens[farI].str)}</span>
       </div>`,
     );
   }
