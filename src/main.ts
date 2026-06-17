@@ -204,7 +204,7 @@ function selectByIndex(idx: number): void {
   if (!data) return;
   selectedIndex = idx;
   $selection.hidden = false;
-  $selectedToken.innerHTML = `<span class="tok active">${cleanWord(
+  $selectedToken.innerHTML = `<span class="tok">${cleanWord(
     data.tokens[idx].str,
   )}</span>`;
   renderOverall(idx);

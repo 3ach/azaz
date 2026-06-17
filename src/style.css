@@ -169,55 +169,21 @@ body {
   gap: 0.2rem 0.6rem;
 }
 
-.selected-label {
-  font-family: var(--smallcaps);
-  font-variant: small-caps;
-  letter-spacing: 0.14em;
-  color: var(--ink-faint);
-  font-size: 0.85rem;
-}
-
-/* The token strip: each piece of the input, the explored one highlighted. */
 .selected-token {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.15rem;
 }
 
+/* The explored word, shown large with a highlighter-pen background. */
 .tok {
   font-family: var(--serif);
   font-size: 1.7rem;
   font-weight: 500;
   line-height: 1.15;
   padding: 0 0.12em;
-  border: 0;
   border-radius: 2px;
-  background: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-}
-
-.tok .dot {
-  color: var(--ink-faint);
-}
-
-.tok:hover:not(.active):not(.disabled) {
-  color: var(--ink);
-}
-
-.tok.active {
   color: var(--ink);
   background: linear-gradient(transparent 62%, var(--target) 62%);
-  cursor: default;
-}
-
-.tok.disabled {
-  color: var(--ink-faint);
-  text-decoration: line-through;
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .overall {
