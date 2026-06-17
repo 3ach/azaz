@@ -1,7 +1,7 @@
 # The Embedding Explorer
 
 An interactive reading of **GPT-2's token embeddings**, running entirely in the
-browser. Live (once Pages is enabled): `https://3ach.github.io/azaz/`
+browser. Live at `https://azaz.zachzundel.com/`
 
 ## Develop
 
@@ -39,5 +39,7 @@ This writes `public/data/meta.json` and `public/data/embeddings.bin`.
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds and publishes
 `dist/` to GitHub Pages on every push to the deployment branch. Enable it once
-under *Settings → Pages → Build and deployment → Source: GitHub Actions*. The
-Vite `base` is set to `/azaz/` to match the project-site URL.
+under *Settings → Pages → Build and deployment → Source: GitHub Actions*, and set
+the custom domain to `azaz.zachzundel.com` (the `public/CNAME` file is published
+with the site). The Vite `base` is `/` because the site is served from the root
+of its own domain.

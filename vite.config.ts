@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 
-// Project is served from https://<user>.github.io/azaz/
+// Served from the custom domain https://azaz.zachzundel.com/ (site root).
 export default defineConfig({
-  base: '/azaz/',
+  base: '/',
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 2000,
