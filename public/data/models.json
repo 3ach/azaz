@@ -1,0 +1,18 @@
+{
+  "models": [
+    {
+      "key": "gpt2",
+      "name": "GPT-2",
+      "dim": 768,
+      "count": 6000,
+      "blurb": "OpenAI's 124M-parameter GPT-2 (2019) \u2014 768 dimensions."
+    },
+    {
+      "key": "deepseek-coder-1.3b",
+      "name": "DeepSeek Coder 1.3B",
+      "dim": 2048,
+      "count": 6000,
+      "blurb": "DeepSeek's 1.3B code model \u2014 2048 dimensions."
+    }
+  ]
+}

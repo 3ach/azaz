@@ -93,6 +93,23 @@ body {
   color: var(--ink);
 }
 
+/* Sits mid-sentence in the subtitle, so it reads like underlined prose. */
+.model-picker {
+  font-family: var(--serif);
+  font-size: 1em;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink-soft);
+  border-radius: 0;
+  padding: 0 0.1rem 1px;
+  cursor: pointer;
+}
+.model-picker:focus {
+  outline: none;
+  border-bottom-color: var(--ink);
+}
+
 .search {
   max-width: 34rem;
   margin: 0 auto;

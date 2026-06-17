@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Azaz — the vocabulary of GPT-2</title>
+    <title>Azaz — the vocabulary of language models</title>
     <meta
       name="description"
-      content="An interactive reading of GPT-2's token embeddings: type a word and wander its 768 dimensions."
+      content="An interactive reading of language-model token embeddings: pick a model, type a word, and wander its dimensions."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,7 +23,8 @@
             <h1>Azaz</h1>
             <p class="subtitle">
               <span class="quote">“In this box are all the words I know.”</span>
-              a look into the vocabulary of GPT-2
+              a look into the vocabulary of
+              <select id="model" class="model-picker" aria-label="model"></select>
             </p>
           </div>
           <img

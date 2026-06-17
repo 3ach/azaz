@@ -1,12 +1,19 @@
 import './style.css';
-import { encode, decode } from 'gpt-tokenizer/encoding/r50k_base';
 
 // ----------------------------------------------------------------------------
 // Types & data model
 // ----------------------------------------------------------------------------
+interface ModelInfo {
+  key: string;
+  name: string;
+  dim: number;
+  count: number;
+  blurb: string;
+}
+
 interface Meta {
   model: string;
-  encoding: string;
+  name: string;
   dim: number;
   count: number;
   quant: string;
@@ -16,11 +23,12 @@ interface Meta {
 }
 
 interface Data {
+  key: string;
   dim: number;
   count: number;
   tokens: { id: number; str: string }[];
-  idToIndex: Map<number, number>;
-  q: Uint16Array; // [count * dim] quantized values
+  byWord: Map<string, number>; // exact trimmed word -> row index
+  byLower: Map<string, number>; // lowercased word -> row index (fallback)
   emb: Float32Array; // [count * dim] dequantized
   norms: Float32Array; // [count] L2 norms
   colMin: Float32Array;
@@ -32,15 +40,13 @@ interface Data {
 const Q_MAX = 65535;
 let data: Data | null = null;
 let selectedIndex: number | null = null;
-// The tokens the current input breaks into, and which one we're exploring.
-let currentIds: number[] = [];
-let selectedPos = -1;
 
 // ----------------------------------------------------------------------------
 // DOM handles
 // ----------------------------------------------------------------------------
 const $search = document.getElementById('search') as HTMLInputElement;
 const $hint = document.getElementById('hint') as HTMLParagraphElement;
+const $model = document.getElementById('model') as HTMLSelectElement;
 const $selection = document.getElementById('selection') as HTMLElement;
 const $selectedToken = document.getElementById('selected-token') as HTMLElement;
 const $overall = document.getElementById('overall') as HTMLElement;
@@ -58,12 +64,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// Render a leading space (GPT-2's word-boundary marker) as a faint middot so
-// the tokenization is legible; everything else is shown verbatim.
-function showToken(str: string): string {
-  return escapeHtml(str).replace(/^ /, '<span class="dot">·</span>');
-}
-
 function cleanWord(str: string): string {
   return escapeHtml(str.trim() || str.replace(/ /g, '␣'));
 }
@@ -73,14 +73,28 @@ function val(t: number, d: number, dim: number): number {
 }
 
 // ----------------------------------------------------------------------------
-// Load data
+// Load data for a model
 // ----------------------------------------------------------------------------
-async function loadData(): Promise<void> {
-  $dims.innerHTML = '<p class="loading">Gathering 768 dimensions…</p>';
+async function loadModels(): Promise<ModelInfo[]> {
+  const base = import.meta.env.BASE_URL;
+  const { models } = (await fetch(`${base}data/models.json`).then((r) =>
+    r.json(),
+  )) as { models: ModelInfo[] };
+  return models;
+}
+
+async function loadData(key: string): Promise<void> {
+  data = null;
+  selectedIndex = null;
+  nbCache = null;
+  $selection.hidden = true;
+  $dims.innerHTML = '<p class="loading">Gathering the dimensions…</p>';
+  $search.disabled = true;
+
   const base = import.meta.env.BASE_URL;
   const [meta, binBuf] = await Promise.all([
-    fetch(`${base}data/meta.json`).then((r) => r.json() as Promise<Meta>),
-    fetch(`${base}data/embeddings.bin`).then((r) => r.arrayBuffer()),
+    fetch(`${base}data/${key}/meta.json`).then((r) => r.json() as Promise<Meta>),
+    fetch(`${base}data/${key}/embeddings.bin`).then((r) => r.arrayBuffer()),
   ]);
 
   const { dim, count } = meta;
@@ -93,9 +107,9 @@ async function loadData(): Promise<void> {
   // Dequantize once for fast cosine / value lookups.
   const emb = new Float32Array(count * dim);
   for (let t = 0; t < count; t++) {
-    const base2 = t * dim;
+    const b = t * dim;
     for (let d = 0; d < dim; d++) {
-      emb[base2 + d] = colMin[d] + q[base2 + d] * colScale[d];
+      emb[b + d] = colMin[d] + q[b + d] * colScale[d];
     }
   }
 
@@ -123,15 +137,25 @@ async function loadData(): Promise<void> {
     colStd[d] = Math.sqrt(v / count) + 1e-9;
   }
 
-  const idToIndex = new Map<number, number>();
-  meta.tokens.forEach((tok, i) => idToIndex.set(tok.id, i));
+  // Resolve a typed word to its row without a tokenizer: every token is a
+  // space-prefixed common word, so we match on the trimmed string (with a
+  // case-insensitive fallback). First occurrence wins.
+  const byWord = new Map<string, number>();
+  const byLower = new Map<string, number>();
+  meta.tokens.forEach((tok, i) => {
+    const w = tok.str.trim();
+    if (!byWord.has(w)) byWord.set(w, i);
+    const lw = w.toLowerCase();
+    if (!byLower.has(lw)) byLower.set(lw, i);
+  });
 
   data = {
+    key,
     dim,
     count,
     tokens: meta.tokens,
-    idToIndex,
-    q,
+    byWord,
+    byLower,
     emb,
     norms,
     colMin,
@@ -141,11 +165,17 @@ async function loadData(): Promise<void> {
   };
 
   $dims.innerHTML = '';
+  $search.disabled = false;
 }
 
 // ----------------------------------------------------------------------------
-// Tokenization
+// Word lookup & selection
 // ----------------------------------------------------------------------------
+function lookupWord(raw: string): number | undefined {
+  if (!data) return undefined;
+  return data.byWord.get(raw) ?? data.byLower.get(raw.toLowerCase());
+}
+
 function handleInput(): void {
   const raw = $search.value.trim();
   $hint.textContent = '';
@@ -155,60 +185,26 @@ function handleInput(): void {
     return;
   }
 
-  // Treat the input as a word in running text (GPT-2's natural, space-prefixed
-  // form). This is the token whose embedding the model actually uses most.
-  currentIds = encode(' ' + raw);
-  const firstKnown = currentIds.findIndex((id) => data!.idToIndex.has(id));
-
-  if (firstKnown === -1) {
+  const idx = lookupWord(raw);
+  if (idx === undefined) {
     $selection.hidden = true;
     selectedIndex = null;
-    $hint.textContent =
-      'That token isn’t in this page’s curated vocabulary. Try a more common word.';
+    $hint.textContent = `“${raw}” isn’t a single token in ${modelName()}’s vocabulary — try a more common word.`;
     return;
   }
-
-  if (currentIds.length > 1) {
-    $hint.textContent =
-      'This word breaks into several tokens — click a piece to explore it.';
-  }
-  // Default to the first in-vocabulary token; the strip lets you pick another.
-  selectByPos(firstKnown);
+  selectByIndex(idx);
 }
 
-// ----------------------------------------------------------------------------
-// Selection & dimension rendering
-// ----------------------------------------------------------------------------
-// The "Now exploring" strip doubles as the token picker: every piece of the
-// input is shown, the explored one is highlighted in colour, the rest are
-// clickable, and out-of-vocabulary pieces are greyed out.
-function renderTokenStrip(): void {
-  if (!data) return;
-  $selectedToken.innerHTML = currentIds
-    .map((id, i) => {
-      const known = data!.idToIndex.has(id);
-      const cls =
-        'tok' +
-        (i === selectedPos ? ' active' : '') +
-        (known ? '' : ' disabled');
-      const title = known
-        ? 'Explore this token'
-        : 'Not in this page’s vocabulary';
-      return `<button class="${cls}" data-pos="${i}"${
-        known ? '' : ' disabled'
-      } title="${title}">${showToken(decode([id]))}</button>`;
-    })
-    .join('');
+function modelName(): string {
+  const opt = $model.selectedOptions[0];
+  return opt ? opt.textContent || 'this model' : 'this model';
 }
 
-function selectByPos(pos: number): void {
+function selectByIndex(idx: number): void {
   if (!data) return;
-  const idx = data.idToIndex.get(currentIds[pos]);
-  if (idx === undefined) return;
-  selectedPos = pos;
   selectedIndex = idx;
   $selection.hidden = false;
-  renderTokenStrip();
+  $selectedToken.innerHTML = cleanWord(data.tokens[idx].str);
   renderOverall(idx);
   renderDimensions();
 }
@@ -341,24 +337,35 @@ $search.addEventListener('input', () => {
   debounce = window.setTimeout(handleInput, 140);
 });
 
-// Clicking a piece in the "Now exploring" strip switches which token we explore.
-$selectedToken.addEventListener('click', (e) => {
-  const btn = (e.target as HTMLElement).closest('.tok') as HTMLElement | null;
-  if (!btn || btn.classList.contains('disabled')) return;
-  const pos = Number(btn.dataset.pos);
-  if (!Number.isNaN(pos) && pos !== selectedPos) selectByPos(pos);
-});
-
 $sort.addEventListener('change', renderDimensions);
 
-loadData()
-  .then(() => {
-    $search.disabled = false;
+// Switching model reloads its embeddings and re-resolves the current word.
+$model.addEventListener('change', () => {
+  switchModel($model.value);
+});
+
+async function switchModel(key: string): Promise<void> {
+  try {
+    await loadData(key);
     $search.focus();
     if ($search.value.trim()) handleInput();
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error(err);
     $dims.innerHTML =
-      '<p class="loading">Could not load embedding data. Please reload.</p>';
-  });
+      '<p class="loading">Could not load this model’s data. Please reload.</p>';
+  }
+}
+
+async function init(): Promise<void> {
+  const models = await loadModels();
+  $model.innerHTML = models
+    .map((m) => `<option value="${m.key}" title="${escapeHtml(m.blurb)}">${escapeHtml(m.name)}</option>`)
+    .join('');
+  await switchModel(models[0].key);
+}
+
+init().catch((err) => {
+  console.error(err);
+  $dims.innerHTML =
+    '<p class="loading">Could not load embedding data. Please reload.</p>';
+});

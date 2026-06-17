@@ -1,7 +1,8 @@
 # The Embedding Explorer
 
-An interactive reading of **GPT-2's token embeddings**, running entirely in the
-browser. Live at `https://azaz.zachzundel.com/`
+An interactive reading of **language-model token embeddings**, running entirely
+in the browser. Pick a model (GPT-2 or DeepSeek Coder 1.3B), type a word, and
+wander its dimensions. Live at `https://azaz.zachzundel.com/`
 
 ## Develop
 
@@ -14,26 +15,26 @@ npm run preview  # preview the production build
 
 ## Regenerate the embedding data
 
-The embedding asset under `public/data/` is generated once and committed. To
-rebuild it (requires internet access to the ONNX model + word list):
+The per-model assets under `public/data/` are generated once and committed (the
+deploy only runs `npm run build`, so it can't download weights at deploy time).
+To rebuild them:
 
 ```bash
-# 1. Download the source assets
-curl -L -o build_assets/gpt2-10.onnx \
-  https://github.com/onnx/models/raw/main/validated/text/machine_comprehension/gpt-2/model/gpt2-10.onnx
-curl -L -o build_assets/google-10000-english.txt \
-  https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-usa.txt
-
-# 2. Pick the single-token common-word vocabulary (Node)
-node scripts/pick_vocab.mjs
-
-# 3. Extract + quantize the embeddings (Python)
-python3 -m venv .venv && . .venv/bin/activate
-pip install numpy onnx
-python3 scripts/extract_embeddings.py
+npm run build:data   # python3 scripts/build_data.py
 ```
 
-This writes `public/data/meta.json` and `public/data/embeddings.bin`.
+For each model in `scripts/build_data.py`'s `MODELS` list this:
+
+1. downloads the model's `tokenizer.json` from HuggingFace,
+2. curates common English words that are a single token in that model,
+3. range-reads just the input-embedding tensor from the model's safetensors on
+   the HuggingFace CDN (no multi-GB full-model download, no torch),
+4. quantizes the selected rows to uint16 per dimension.
+
+It writes `public/data/<model>/{meta.json,embeddings.bin}` plus
+`public/data/models.json` (the index the in-page picker reads). The script needs
+only Python 3 + numpy and internet access; add a model by appending to `MODELS`.
+Gated repos (e.g. official Llama) additionally need an HF token.
 
 ## Deploy
 
