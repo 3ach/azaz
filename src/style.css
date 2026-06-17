@@ -263,6 +263,19 @@ body {
   margin-top: 0.4rem;
 }
 
+/* On wide screens the list breaks out past the centred text column and flows
+   into 2–3 shorter columns. Multicol fills column-major (down, then over), so
+   the distinctiveness ranking still reads top-to-bottom. */
+@media (min-width: 1024px) {
+  .dims {
+    width: min(95vw, 1500px);
+    margin-left: 50%;
+    transform: translateX(-50%);
+    column-width: 24rem;
+    column-gap: 2.5rem;
+  }
+}
+
 .row {
   display: grid;
   grid-template-columns: 3.2rem 7rem 1fr 7rem;
@@ -270,6 +283,7 @@ body {
   gap: 0.5rem;
   padding: 0.32rem 0;
   border-bottom: 1px dotted var(--rule);
+  break-inside: avoid;
 }
 
 .row .dimno {
