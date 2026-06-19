@@ -19,27 +19,47 @@ interface Meta {
   quant: string;
   colMin: number[];
   colScale: number[];
+  colMean: number[]; // per-dimension mean (for distinctiveness ordering)
+  colStd: number[];
+  neighbours: number; // nearest-overall words stored per record
+  recordBytes: number; // fixed size of one token's record in tokens.bin
   tokens: { id: number; str: string }[];
 }
 
 interface Data {
+  base: string; // asset base URL (for range-fetching tokens.bin)
   key: string;
   dim: number;
   count: number;
   tokens: { id: number; str: string }[];
   byWord: Map<string, number>; // exact trimmed word -> row index
   byLower: Map<string, number>; // lowercased word -> row index (fallback)
-  emb: Float32Array; // [count * dim] dequantized
-  norms: Float32Array; // [count] L2 norms
   colMin: Float32Array;
   colMax: Float32Array;
+  colScale: Float32Array;
   colMean: Float32Array; // per-dimension mean (for distinctiveness ordering)
   colStd: Float32Array;
+  neighbours: number;
+  recordBytes: number;
+}
+
+// One token's precomputed render payload, range-fetched from tokens.bin.
+interface TokenRecord {
+  values: Float32Array; // [dim] this token's own dequantized coordinates
+  neighbours: number[]; // token indices, nearest first
+  left: Uint16Array; // [dim] nearest word with this axis pushed to its min
+  right: Uint16Array; // [dim] nearest word with this axis pushed to its max
 }
 
 const Q_MAX = 65535;
 let data: Data | null = null;
 let selectedIndex: number | null = null;
+
+// Record for the token currently shown, plus a per-model cache (replaced on
+// model switch). selectSeq guards against a slow fetch landing after a newer pick.
+let currentRecord: TokenRecord | null = null;
+let recordCache = new Map<number, TokenRecord>();
+let selectSeq = 0;
 
 // ----------------------------------------------------------------------------
 // DOM handles
@@ -68,10 +88,6 @@ function cleanWord(str: string): string {
   return escapeHtml(str.trim() || str.replace(/ /g, '␣'));
 }
 
-function val(t: number, d: number, dim: number): number {
-  return data!.emb[t * dim + d];
-}
-
 // ----------------------------------------------------------------------------
 // Load data for a model
 // ----------------------------------------------------------------------------
@@ -86,56 +102,24 @@ async function loadModels(): Promise<ModelInfo[]> {
 async function loadData(key: string): Promise<void> {
   data = null;
   selectedIndex = null;
-  nbCache = null;
+  currentRecord = null;
+  recordCache = new Map(); // drop the previous model's cached records
   $selection.hidden = true;
   $dims.innerHTML = '<p class="loading">Gathering the dimensions…</p>';
   $search.disabled = true;
 
+  // Startup downloads only meta.json (token list + per-column stats). The matrix
+  // stays on the server; each token's record is range-fetched on selection.
   const base = import.meta.env.BASE_URL;
-  const [meta, binBuf] = await Promise.all([
-    fetch(`${base}data/${key}/meta.json`).then((r) => r.json() as Promise<Meta>),
-    fetch(`${base}data/${key}/embeddings.bin`).then((r) => r.arrayBuffer()),
-  ]);
+  const meta = (await fetch(`${base}data/${key}/meta.json`).then((r) =>
+    r.json(),
+  )) as Meta;
 
-  const { dim, count } = meta;
-  const q = new Uint16Array(binBuf);
+  const { dim } = meta;
   const colMin = Float32Array.from(meta.colMin);
   const colScale = Float32Array.from(meta.colScale);
   const colMax = new Float32Array(dim);
   for (let d = 0; d < dim; d++) colMax[d] = colMin[d] + Q_MAX * colScale[d];
-
-  // Dequantize once for fast cosine / value lookups.
-  const emb = new Float32Array(count * dim);
-  for (let t = 0; t < count; t++) {
-    const b = t * dim;
-    for (let d = 0; d < dim; d++) {
-      emb[b + d] = colMin[d] + q[b + d] * colScale[d];
-    }
-  }
-
-  const norms = new Float32Array(count);
-  for (let t = 0; t < count; t++) {
-    let s = 0;
-    const b = t * dim;
-    for (let d = 0; d < dim; d++) s += emb[b + d] * emb[b + d];
-    norms[t] = Math.sqrt(s) + 1e-9;
-  }
-
-  // Per-dimension mean & std for distinctiveness ordering.
-  const colMean = new Float32Array(dim);
-  const colStd = new Float32Array(dim);
-  for (let d = 0; d < dim; d++) {
-    let m = 0;
-    for (let t = 0; t < count; t++) m += emb[t * dim + d];
-    m /= count;
-    let v = 0;
-    for (let t = 0; t < count; t++) {
-      const x = emb[t * dim + d] - m;
-      v += x * x;
-    }
-    colMean[d] = m;
-    colStd[d] = Math.sqrt(v / count) + 1e-9;
-  }
 
   // Resolve a typed word to its row without a tokenizer: every token is a
   // space-prefixed common word, so we match on the trimmed string (with a
@@ -150,22 +134,56 @@ async function loadData(key: string): Promise<void> {
   });
 
   data = {
+    base,
     key,
     dim,
-    count,
+    count: meta.count,
     tokens: meta.tokens,
     byWord,
     byLower,
-    emb,
-    norms,
     colMin,
     colMax,
-    colMean,
-    colStd,
+    colScale,
+    colMean: Float32Array.from(meta.colMean),
+    colStd: Float32Array.from(meta.colStd),
+    neighbours: meta.neighbours,
+    recordBytes: meta.recordBytes,
   };
 
   $dims.innerHTML = '';
   $search.disabled = false;
+}
+
+// Range-fetch one token's record (offset = index * recordBytes) and unpack the
+// fixed [values | neighbours | leftIdx | rightIdx] layout. Cached per model; the
+// cache reference is captured up front so a mid-flight model switch can't poison
+// the new model's cache.
+async function fetchRecord(index: number): Promise<TokenRecord> {
+  const cache = recordCache;
+  const hit = cache.get(index);
+  if (hit) return hit;
+
+  const { base, key, dim, neighbours, recordBytes, colMin, colScale } = data!;
+  const start = index * recordBytes;
+  const end = start + recordBytes - 1;
+  const res = await fetch(`${base}data/${key}/tokens.bin`, {
+    headers: { Range: `bytes=${start}-${end}` },
+  });
+  const body = await res.arrayBuffer();
+  // 206 gives just our slice; if a host ignores Range (200), index into the whole.
+  const buf = res.status === 206 ? body : body.slice(start, start + recordBytes);
+  const u16 = new Uint16Array(buf);
+
+  const values = new Float32Array(dim);
+  for (let d = 0; d < dim; d++) values[d] = colMin[d] + u16[d] * colScale[d];
+  const nb: number[] = [];
+  for (let n = 0; n < neighbours; n++) nb.push(u16[dim + n]);
+  const left = u16.slice(dim + neighbours, dim + neighbours + dim);
+  const right = u16.slice(dim + neighbours + dim, dim + neighbours + 2 * dim);
+
+  const rec: TokenRecord = { values, neighbours: nb, left, right };
+  cache.set(index, rec);
+  return rec;
 }
 
 // ----------------------------------------------------------------------------
@@ -200,111 +218,72 @@ function modelName(): string {
   return opt ? opt.textContent || 'this model' : 'this model';
 }
 
-function selectByIndex(idx: number): void {
+async function selectByIndex(idx: number): Promise<void> {
   if (!data) return;
   selectedIndex = idx;
   $selection.hidden = false;
   $selectedToken.innerHTML = `<span class="tok">${cleanWord(
     data.tokens[idx].str,
   )}</span>`;
-  renderOverall(idx);
+
+  const seq = ++selectSeq;
+  if (!recordCache.has(idx)) {
+    $overall.textContent = '';
+    $dims.innerHTML = '<p class="loading">Fetching this token…</p>';
+  }
+  let rec: TokenRecord;
+  try {
+    rec = await fetchRecord(idx);
+  } catch {
+    if (seq === selectSeq) {
+      $dims.innerHTML =
+        '<p class="loading">Could not load this token. Please retry.</p>';
+    }
+    return;
+  }
+  if (seq !== selectSeq) return; // a newer selection (or model switch) superseded us
+  currentRecord = rec;
+  renderOverall();
   renderDimensions();
 }
 
-// Indices of every other token ordered by full-vector cosine similarity to the
-// selected one, most similar first. Cached so re-sorts don't recompute it.
-let nbCache: { index: number; order: Int32Array } | null = null;
-function neighbourOrder(index: number): Int32Array {
-  if (nbCache && nbCache.index === index) return nbCache.order;
-  const { dim, count, emb, norms } = data!;
-  const b = index * dim;
-  const scored: { i: number; s: number }[] = [];
-  for (let t = 0; t < count; t++) {
-    if (t === index) continue;
-    let dot = 0;
-    const tb = t * dim;
-    for (let d = 0; d < dim; d++) dot += emb[b + d] * emb[tb + d];
-    scored.push({ i: t, s: dot / (norms[index] * norms[t]) });
-  }
-  scored.sort((a, c) => c.s - a.s);
-  const order = Int32Array.from(scored, (x) => x.i);
-  nbCache = { index, order };
-  return order;
-}
-
-// Bonus context: the closest words by full-vector cosine similarity.
-function renderOverall(index: number): void {
-  const order = neighbourOrder(index);
-  const words = Array.from(order.slice(0, 5))
+// Bonus context: the closest words by full-vector cosine similarity, taken
+// straight from the precomputed record (nearest first).
+function renderOverall(): void {
+  if (!currentRecord) return;
+  const words = currentRecord.neighbours
     .map((i) => `<b>${cleanWord(data!.tokens[i].str)}</b>`)
     .join(', ');
   $overall.innerHTML = `nearest overall: ${words}`;
 }
 
 function renderDimensions(): void {
-  if (!data || selectedIndex === null) return;
-  const { dim, count, emb, colMin, colMax, colMean, colStd } = data;
+  if (!data || selectedIndex === null || !currentRecord) return;
+  const { dim, colMin, colMax, colMean, colStd } = data;
+  const { values, left, right } = currentRecord;
   const t = selectedIndex;
-  const tb = t * dim;
 
   // Order dimensions either by index or by how distinctive this word is along
   // each axis (|z-score| of its value within the column).
   const order = Array.from({ length: dim }, (_, d) => d);
   if ($sort.value === 'distinct') {
     order.sort((a, b) => {
-      const za = Math.abs((val(t, a, dim) - colMean[a]) / colStd[a]);
-      const zb = Math.abs((val(t, b, dim) - colMean[b]) / colStd[b]);
+      const za = Math.abs((values[a] - colMean[a]) / colStd[a]);
+      const zb = Math.abs((values[b] - colMean[b]) / colStd[b]);
       return zb - za;
     });
   }
 
-  // Squared distance from the target to every other word, computed once. Holding
-  // all other coordinates at the target's values and moving one axis to value E
-  // gives a point whose squared distance to word w is just
-  //   full2(w) - (w_d - t_d)^2 + (w_d - E)^2
-  // so we can find the nearest word to each axis-extreme cheaply, per dimension.
-  const full2 = new Float64Array(count);
-  for (let w = 0; w < count; w++) {
-    if (w === t) continue;
-    const wb = w * dim;
-    let s = 0;
-    for (let k = 0; k < dim; k++) {
-      const diff = emb[wb + k] - emb[tb + k];
-      s += diff * diff;
-    }
-    full2[w] = s;
-  }
-
   const parts: string[] = [];
   for (const d of order) {
-    const tv = emb[tb + d];
+    const tv = values[d];
     const lo = colMin[d];
     const hi = colMax[d];
 
-    // Push this one coordinate to the column's min, then max (the ends of the
-    // axis), holding the rest at the target — which real word sits nearest each?
-    let loI = -1;
-    let hiI = -1;
-    let loBest = Infinity;
-    let hiBest = Infinity;
-    for (let w = 0; w < count; w++) {
-      if (w === t) continue;
-      const wd = emb[w * dim + d];
-      const perp = full2[w] - (wd - tv) * (wd - tv);
-      const sLo = perp + (wd - lo) * (wd - lo);
-      const sHi = perp + (wd - hi) * (wd - hi);
-      if (sLo < loBest) {
-        loBest = sLo;
-        loI = w;
-      }
-      if (sHi < hiBest) {
-        hiBest = sHi;
-        hiI = w;
-      }
-    }
-
-    const leftWord = cleanWord(data.tokens[loI].str);
-    const rightWord = cleanWord(data.tokens[hiI].str);
+    // Precomputed: the nearest real word with this one coordinate pushed to the
+    // column's min (left) / max (right), holding the rest at the target.
+    const leftWord = cleanWord(data.tokens[left[d]].str);
+    const rightWord = cleanWord(data.tokens[right[d]].str);
 
     // The axis runs the full coordinate range; the target's bubble sits at its
     // value, between the min end (left) and max end (right).

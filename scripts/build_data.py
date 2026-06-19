@@ -7,13 +7,23 @@ For each configured open-weight model this:
   3. range-reads just the input-embedding tensor from the model's safetensors
      on the HuggingFace CDN (no multi-GB full-model download, no torch),
   4. quantizes the selected rows to uint16 per dimension, and
-  5. writes  public/data/<key>/{meta.json,embeddings.bin}.
+  5. writes  public/data/<key>/meta.json  (served) and
+            data_src/<key>/embeddings.bin (build-only source matrix, NOT
+            deployed — outside public/ so the browser never downloads it).
 
 Finally it writes public/data/models.json — the index the picker reads.
 
+The browser does not load these matrices directly. After this script, run
+
+    node scripts/pack_tokens.mjs
+
+which turns each data_src/<key>/embeddings.bin into the served
+public/data/<key>/tokens.bin (fixed-size per-token records the page
+range-fetches) and augments each meta.json with colMean/colStd + the layout.
+
 Pure standard library + numpy, so it runs anywhere a recent Python does. Run:
 
-    python3 scripts/build_data.py
+    python3 scripts/build_data.py && node scripts/pack_tokens.mjs
 """
 import json
 import os
